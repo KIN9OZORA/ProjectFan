@@ -53,12 +53,9 @@ export default function SessionsPage() {
     return () => clearInterval(interval);
   }, []);
 
-  function isOnline(lastSeen: string | null) {
-    if (!lastSeen) return false;
-
-    const diff = Date.now() - new Date(lastSeen).getTime();
-
-    return diff < 30000;
+  function isOnline(mqttStatus: string | null) {
+    if (!mqttStatus) return false;
+    return mqttStatus.toLowerCase() === "connected";
   }
 
   function activateDevice(deviceId: string) {
@@ -69,18 +66,18 @@ export default function SessionsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
-      <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">
+    <div className="mx-auto w-full min-w-[360px] max-w-5xl space-y-2 px-1 sm:px-0">
+      <div className="flex flex-row items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm sm:rounded-xl sm:p-3">
+        <div className="min-w-0">
+          <h1 className="truncate text-sm font-bold text-slate-900 sm:text-lg">
             Device Sessions
           </h1>
 
-          <p className="mt-1 text-xs text-slate-500 sm:text-sm">
+          <p className="mt-0.5 truncate text-[10px] text-slate-500 sm:text-[11px]">
             Hanya device yang terdaftar di environment yang dapat ditampilkan.
           </p>
 
-          <p className="mt-1 text-[11px] text-slate-400">
+          <p className="mt-0.5 truncate text-[9px] text-slate-400 sm:text-[10px]">
             Allowed Device:{" "}
             {allowedDeviceIds.length > 0
               ? allowedDeviceIds.join(", ")
@@ -90,9 +87,9 @@ export default function SessionsPage() {
 
         <button
           onClick={loadData}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+          className="inline-flex shrink-0 items-center justify-center gap-1 rounded-md bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-slate-800 sm:gap-1.5 sm:rounded-lg sm:px-3 sm:py-1.5 sm:text-xs cursor-pointer"
         >
-          <RefreshCcw size={16} />
+          <RefreshCcw size={13} />
           Refresh
         </button>
       </div>
@@ -127,7 +124,7 @@ export default function SessionsPage() {
 
                 <tbody className="divide-y divide-slate-200 bg-white">
                   {sessions.map((device) => {
-                    const online = isOnline(device.last_seen);
+                    const online = isOnline(device.mqtt_status);
                     const allowed = isDeviceAllowed(device.device_id);
 
                     return (
@@ -204,7 +201,7 @@ export default function SessionsPage() {
             {/* Mobile Card */}
             <div className="space-y-3 p-3 md:hidden">
               {sessions.map((device) => {
-                const online = isOnline(device.last_seen);
+                const online = isOnline(device.mqtt_status);
                 const allowed = isDeviceAllowed(device.device_id);
 
                 return (

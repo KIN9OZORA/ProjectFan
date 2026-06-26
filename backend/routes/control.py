@@ -1,12 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
+import logging
 
-from database import get_db
+from database import get_db, SessionLocal
 from models import DeviceSetting
 from schemas import ModeRequest, FanRequest, AlarmRequest, SetpointRequest, TimerRequest
 from mqtt_service import publish_command, cleanup_old_raw_data, cleanup_old_summary_data
 
 router = APIRouter(prefix="/api/device", tags=["Control"])
+
+logger = logging.getLogger(__name__)
 
 
 def get_or_create_setting(db: Session, device_id: str):
@@ -21,21 +24,38 @@ def get_or_create_setting(db: Session, device_id: str):
     return setting
 
 
+def update_db_setting_task(device_id: str, updates: dict):
+    db = SessionLocal()
+    try:
+        setting = get_or_create_setting(db, device_id)
+        for key, val in updates.items():
+            setattr(setting, key, val)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.exception(f"Background settings update failed: {e}")
+    finally:
+        db.close()
+
+
 @router.post("/{device_id}/mode")
-def set_mode(device_id: str, request: ModeRequest, db: Session = Depends(get_db)):
+def set_mode(device_id: str, request: ModeRequest, background_tasks: BackgroundTasks):
     mode = request.mode.upper()
 
     if mode not in ["AUTO", "MANUAL"]:
         raise HTTPException(status_code=400, detail="Mode must be AUTO or MANUAL")
 
-    setting = get_or_create_setting(db, device_id)
-    setting.mode = mode
-    db.commit()
+    try:
+        # 1. Publish command immediately to MQTT for maximum speed
+        publish_command(device_id, {
+            "command": "SET_MODE",
+            "mode": mode
+        })
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
-    publish_command(device_id, {
-        "command": "SET_MODE",
-        "mode": mode
-    })
+    # 2. Update database asynchronously in background task
+    background_tasks.add_task(update_db_setting_task, device_id, {"mode": mode})
 
     return {
         "message": "Mode command sent",
@@ -45,15 +65,15 @@ def set_mode(device_id: str, request: ModeRequest, db: Session = Depends(get_db)
 
 
 @router.post("/{device_id}/fan")
-def set_fan(device_id: str, request: FanRequest, db: Session = Depends(get_db)):
-    setting = get_or_create_setting(db, device_id)
-    setting.manual_fan_status = request.fan_status
-    db.commit()
+def set_fan(device_id: str, request: FanRequest, background_tasks: BackgroundTasks):
+    try:
+        # 1. Publish command immediately to MQTT
+        publish_command(device_id, {"fan": request.fan_status})
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
-    publish_command(device_id, {
-        "command": "SET_FAN",
-        "fan_status": request.fan_status
-    })
+    # 2. Update database asynchronously
+    background_tasks.add_task(update_db_setting_task, device_id, {"manual_fan_status": request.fan_status})
 
     return {
         "message": "Fan command sent",
@@ -63,15 +83,15 @@ def set_fan(device_id: str, request: FanRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/{device_id}/alarm")
-def set_alarm(device_id: str, request: AlarmRequest, db: Session = Depends(get_db)):
-    setting = get_or_create_setting(db, device_id)
-    setting.manual_alarm_status = request.alarm_status
-    db.commit()
+def set_alarm(device_id: str, request: AlarmRequest, background_tasks: BackgroundTasks):
+    try:
+        # 1. Publish command immediately to MQTT
+        publish_command(device_id, {"alarm": request.alarm_status})
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
-    publish_command(device_id, {
-        "command": "SET_ALARM",
-        "alarm_status": request.alarm_status
-    })
+    # 2. Update database asynchronously
+    background_tasks.add_task(update_db_setting_task, device_id, {"manual_alarm_status": request.alarm_status})
 
     return {
         "message": "Alarm command sent",
@@ -81,20 +101,25 @@ def set_alarm(device_id: str, request: AlarmRequest, db: Session = Depends(get_d
 
 
 @router.post("/{device_id}/setpoint")
-def set_setpoint(device_id: str, request: SetpointRequest, db: Session = Depends(get_db)):
+def set_setpoint(device_id: str, request: SetpointRequest, background_tasks: BackgroundTasks):
     if request.setpoint_on <= request.setpoint_off:
         raise HTTPException(
             status_code=400,
             detail="setpoint_on must be greater than setpoint_off"
         )
 
-    setting = get_or_create_setting(db, device_id)
-    setting.setpoint_on = request.setpoint_on
-    setting.setpoint_off = request.setpoint_off
-    db.commit()
+    try:
+        # 1. Publish command immediately to MQTT
+        publish_command(device_id, {
+            "command": "SET_SETPOINT",
+            "setpoint_on": request.setpoint_on,
+            "setpoint_off": request.setpoint_off
+        })
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
-    publish_command(device_id, {
-        "command": "SET_SETPOINT",
+    # 2. Update database asynchronously
+    background_tasks.add_task(update_db_setting_task, device_id, {
         "setpoint_on": request.setpoint_on,
         "setpoint_off": request.setpoint_off
     })
@@ -108,17 +133,19 @@ def set_setpoint(device_id: str, request: SetpointRequest, db: Session = Depends
 
 
 @router.post("/{device_id}/timer")
-def set_timer(device_id: str, request: TimerRequest, db: Session = Depends(get_db)):
+def set_timer(device_id: str, request: TimerRequest, background_tasks: BackgroundTasks):
     if request.timer_seconds < 0:
         raise HTTPException(status_code=400, detail="timer_seconds must be >= 0")
 
-    setting = get_or_create_setting(db, device_id)
-    setting.manual_timer_seconds = request.timer_seconds
-    db.commit()
+    try:
+        # 1. Publish command immediately to MQTT
+        publish_command(device_id, {"timer": request.timer_seconds})
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
-    publish_command(device_id, {
-        "command": "SET_TIMER",
-        "timer_seconds": request.timer_seconds
+    # 2. Update database asynchronously
+    background_tasks.add_task(update_db_setting_task, device_id, {
+        "manual_timer_seconds": request.timer_seconds
     })
 
     return {
@@ -133,9 +160,10 @@ def start_fan_timer(device_id: str, request: TimerRequest):
     if request.timer_seconds < 0:
         raise HTTPException(status_code=400, detail="timer_seconds must be >= 0")
 
+    # ESP32 handleMqttCommand checks doc.containsKey("start_timer") and doc["start_timer"].as<bool>()
     publish_command(device_id, {
-        "command": "START_FAN_TIMER",
-        "timer_seconds": request.timer_seconds
+        "timer": request.timer_seconds,
+        "start_timer": True
     })
 
     return {

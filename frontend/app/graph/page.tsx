@@ -97,21 +97,21 @@ export default function GraphPage() {
   }, [data, timeframe]);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="mx-auto w-full min-w-[360px] max-w-5xl space-y-2 px-1 sm:px-0">
       {/* Header Panel */}
-      <div className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">
+      <div className="flex flex-row items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm sm:rounded-xl sm:p-3">
+        <div className="min-w-0">
+          <h1 className="truncate text-sm font-bold text-slate-900 sm:text-lg">
             Graph Monitoring ({selectedDeviceId})
           </h1>
-          <p className="mt-1 text-xs text-slate-500 sm:text-sm">
+          <p className="mt-0.5 truncate text-[10px] text-slate-500 sm:text-[11px]">
             Data grafik memakai mean per 1 menit.
           </p>
         </div>
 
         {/* Timeframe Selector Tabs */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex gap-1 rounded-xl bg-slate-100 p-1 border border-slate-200">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          <div className="flex gap-0.5 rounded-lg bg-slate-100 p-0.5 border border-slate-200">
             {(["6h", "1d", "1w", "1m"] as const).map((tf) => {
               const label = {
                 "6h": "6 Jam",
@@ -124,7 +124,7 @@ export default function GraphPage() {
                 <button
                   key={tf}
                   onClick={() => setTimeframe(tf)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
+                  className={`rounded-md px-2 py-1 text-[10px] font-bold transition cursor-pointer sm:px-2.5 sm:py-1 sm:text-xs ${
                     active
                       ? "bg-slate-900 text-white shadow-sm"
                       : "text-slate-600 hover:text-slate-950"
@@ -138,25 +138,25 @@ export default function GraphPage() {
 
           <button
             onClick={loadData}
-            className="inline-flex items-center gap-2 rounded-xl bg-slate-100 border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 cursor-pointer"
+            className="inline-flex shrink-0 items-center justify-center gap-1 rounded-md bg-slate-100 border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-200 sm:gap-1.5 sm:rounded-lg sm:px-2.5 sm:py-1.5 sm:text-xs cursor-pointer"
           >
-            <RefreshCcw size={16} />
+            <RefreshCcw size={12} />
             Refresh
           </button>
 
           <a
             href={exportUrl(selectedDeviceId, "summary")}
-            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 cursor-pointer"
+            className="inline-flex shrink-0 items-center justify-center gap-1 rounded-md bg-blue-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-blue-700 sm:gap-1.5 sm:rounded-lg sm:px-2.5 sm:py-1.5 sm:text-xs cursor-pointer"
           >
-            <Download size={16} />
+            <Download size={12} />
             Summary
           </a>
 
           <a
             href={exportUrl(selectedDeviceId, "raw")}
-            className="inline-flex items-center gap-2 rounded-xl bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-300 cursor-pointer"
+            className="inline-flex shrink-0 items-center justify-center gap-1 rounded-md bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-300 sm:gap-1.5 sm:rounded-lg sm:px-2.5 sm:py-1.5 sm:text-xs cursor-pointer"
           >
-            <Download size={16} />
+            <Download size={12} />
             Raw
           </a>
         </div>
@@ -173,11 +173,11 @@ export default function GraphPage() {
   description="Trend suhu rata-rata."
 >
   {loading ? (
-    <div className="h-[280px] rounded-xl bg-slate-50 p-6">
+    <div className="h-[160px] md:h-[200px] rounded-xl bg-slate-50 p-6">
       Loading...
     </div>
   ) : (
-    <div className="h-[280px] md:h-[320px] px-2">
+    <div className="h-[160px] md:h-[200px] px-2">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart
           data={chartData}
@@ -261,11 +261,11 @@ export default function GraphPage() {
         description="Jumlah sample fan/alarm ON dalam bucket 1 menit."
       >
         {chartData.length === 0 ? (
-          <div className="h-[260px] rounded-xl bg-slate-50 p-6 text-slate-500 flex items-center justify-center">
+          <div className="h-[160px] md:h-[200px] rounded-xl bg-slate-50 p-6 text-slate-500 flex items-center justify-center">
             Belum ada data.
           </div>
         ) : (
-          <div className="h-[260px]">
+          <div className="h-[160px] md:h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />

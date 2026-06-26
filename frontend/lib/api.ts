@@ -1,5 +1,5 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.1.17:8000";
-const DEVICE_ID = process.env.NEXT_PUBLIC_DEVICE_ID || "FAN-001";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.1.12:8000";
+const DEVICE_ID = process.env.NEXT_PUBLIC_DEVICE_ID || "FAN-001,FAN-002,FAN-003,FAN-004,FAN-005,FAN-006,FAN-007,FAN-008,FAN-009,FAN-010,FAN-011,FAN-012,FAN-013,FAN-014,FAN-015,FAN-016,FAN-017,FAN-018,FAN-019,FAN-020";
 
 export { API_BASE_URL, DEVICE_ID };
 
@@ -54,6 +54,8 @@ export type RealtimeData = {
   uptime_seconds: number;
   free_heap?: number | null;
   restart_reason?: number | null;
+  offline: boolean;
+  last_seen_seconds: number;
   updated_at: string;
 };
 

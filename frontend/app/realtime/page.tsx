@@ -171,17 +171,27 @@ export default function RealtimePage() {
 
       await fn();
 
+      // Fast-poll after command: check every 400ms up to 10x (4 seconds)
+      // Wrapped in Promise so actionLoading (button spinner) stays active
+      // until we actually get the device's response — not just until POST returns
+      await new Promise<void>((resolve) => {
+        let attempts = 0;
+        const fastPoll = setInterval(async () => {
+          attempts++;
+          await loadData();
+          if (attempts >= 10) {
+            clearInterval(fastPoll);
+            resolve();
+          }
+        }, 400);
+      });
+
       setToast({
         type: "success",
         text: `${label} berhasil dikirim`,
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 700));
-      await loadData();
-
-      setTimeout(() => {
-        setToast(null);
-      }, 1800);
+      setTimeout(() => setToast(null), 1500);
     } catch (err) {
       console.error(err);
 
@@ -194,6 +204,8 @@ export default function RealtimePage() {
         setToast(null);
       }, 2500);
     } finally {
+      // Hanya terpanggil setelah fast-poll selesai,
+      // jadi loading button tetap aktif selama menunggu respons ESP32
       setActionLoading(null);
     }
   }

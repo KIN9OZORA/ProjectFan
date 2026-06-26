@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from datetime import datetime, timezone
 
 from database import get_db
-from models import Device, DeviceSession
+from models import Device, DeviceSession, DeviceLatest
 
 router = APIRouter(prefix="/api/sessions", tags=["Sessions"])
 
@@ -11,18 +12,38 @@ router = APIRouter(prefix="/api/sessions", tags=["Sessions"])
 def get_sessions(db: Session = Depends(get_db)):
     devices = db.query(Device).order_by(Device.id.desc()).all()
 
-    return [
-        {
+    # Build a map of device_id → DeviceLatest for efficient lookup
+    latest_map = {
+        row.device_id: row
+        for row in db.query(DeviceLatest).all()
+    }
+
+    result = []
+    for device in devices:
+        latest = latest_map.get(device.device_id)
+
+        # Compute effective mqtt_status considering updated_at age
+        effective_status = device.mqtt_status or "offline"
+
+        if latest and latest.updated_at:
+            updated = latest.updated_at
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=timezone.utc)
+            age_seconds = (datetime.now(timezone.utc) - updated).total_seconds()
+            if age_seconds > 90:
+                effective_status = "offline"
+
+        result.append({
             "device_id": device.device_id,
             "device_name": device.device_name,
             "ip_address": device.ip_address,
-            "mqtt_status": device.mqtt_status,
+            "mqtt_status": effective_status,
             "wifi_rssi": device.wifi_rssi,
             "last_seen": device.last_seen,
             "created_at": device.created_at,
-        }
-        for device in devices
-    ]
+        })
+
+    return result
 
 
 @router.get("/{device_id}")

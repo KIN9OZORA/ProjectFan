@@ -61,7 +61,7 @@ export default function LayoutWrapper({
   // Render dashboard layout
   return (
     <DeviceProvider>
-      <div className="flex min-h-screen bg-slate-100">
+      <div className="flex min-h-screen bg-slate-100 text-slate-900 transition-colors duration-200 dark:bg-[#080d19] dark:text-slate-100">
         <Sidebar />
         <main className="min-h-screen flex-1 overflow-x-hidden px-3 pb-24 pt-3 sm:px-5 sm:pt-5 lg:p-6">
           {children}

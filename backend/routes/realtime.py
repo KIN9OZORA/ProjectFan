@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import DeviceLatest, DeviceSetting
-
+from datetime import datetime, timezone
 router = APIRouter(prefix="/api/realtime", tags=["Realtime"])
 
 
@@ -17,6 +17,27 @@ def get_realtime(device_id: str, db: Session = Depends(get_db)):
 
     if not latest:
         raise HTTPException(status_code=404, detail="No latest data found")
+
+    # ===== OFFLINE CHECK =====
+    # A device is considered offline if:
+    #   1. mqtt_status is explicitly "offline" (device sent a will/disconnect message), OR
+    #   2. No fresh telemetry has been received for > 90 seconds
+    offline = False
+    age_seconds = 9999
+
+    if latest.updated_at:
+        now_utc = datetime.now(timezone.utc)
+        updated = latest.updated_at
+        # Ensure both are tz-aware for comparison
+        if updated.tzinfo is None:
+            from datetime import timezone as tz
+            updated = updated.replace(tzinfo=tz.utc)
+        age_seconds = (now_utc - updated).total_seconds()
+
+    if latest.mqtt_status == "offline":
+        offline = True
+    elif age_seconds > 90:
+        offline = True
 
     return {
         "device_id": latest.device_id,
@@ -41,6 +62,10 @@ def get_realtime(device_id: str, db: Session = Depends(get_db)):
         "free_heap": latest.free_heap,
         "restart_reason": latest.restart_reason,
         "updated_at": latest.updated_at,
+
+        # tambahan
+        "offline": offline,
+        "last_seen_seconds": int(age_seconds),
     }
 
 
