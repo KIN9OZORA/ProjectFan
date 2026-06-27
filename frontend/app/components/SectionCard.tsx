@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import React, { ReactNode } from "react";
 
 type SectionCardProps = {
   title: string;
@@ -6,7 +6,7 @@ type SectionCardProps = {
   children: ReactNode;
 };
 
-export default function SectionCard({
+function SectionCard({
   title,
   description,
   children,
@@ -23,3 +23,5 @@ export default function SectionCard({
     </section>
   );
 }
+
+export default React.memo(SectionCard);

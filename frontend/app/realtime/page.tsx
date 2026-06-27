@@ -111,6 +111,7 @@ export default function RealtimePage() {
 
   const { chartData, updateChartData } = useChartDataCache(selectedDeviceId);
 
+
   async function loadData() {
     try {
       const res = await getRealtime(selectedDeviceId);
@@ -133,7 +134,7 @@ export default function RealtimePage() {
       setCurrentSetpointOff(res.setpoint_off ?? 35);
       setCurrentTimerSeconds(res.manual_timer_seconds ?? 60);
 
-      if (res.manual_timer_active) {
+      if (res.manual_alarm_status !== undefined && res.manual_alarm_status !== null) {
         setTimerAlarmMode(res.manual_alarm_status ? "ON" : "OFF");
       }
 
@@ -227,7 +228,9 @@ export default function RealtimePage() {
 
   const fanIsOn = data?.fan_status === true;
   const fanIsOff = data?.fan_status === false;
+  // timerIsActive uses local state for instant UI response after Start is clicked
   const timerIsActive = data?.manual_timer_active === true;
+  const displayTimerRemaining = data?.timer_remaining_seconds ?? 0;
   const isActionLoading = actionLoading !== null;
 
   return (
@@ -695,7 +698,7 @@ export default function RealtimePage() {
 
                   <p className="text-[11px] font-bold text-slate-900 sm:text-xs">
                     {timerIsActive
-                      ? `${data?.timer_remaining_seconds ?? 0} detik tersisa`
+                      ? `${displayTimerRemaining} detik tersisa`
                       : `${currentTimerSeconds} detik`}
                   </p>
 
@@ -784,11 +787,11 @@ export default function RealtimePage() {
                         timerIsActive ||
                         isActionLoading
                       }
-                      onClick={() =>
+                      onClick={() => {
                         action("Start fan timer", () =>
                           startFanTimer(selectedDeviceId, timerSecondsInput)
-                        )
-                      }
+                        );
+                      }}
                       className={`cursor-pointer rounded-lg px-2 py-1.5 text-[10px] font-bold text-white transition disabled:cursor-not-allowed disabled:bg-slate-300 sm:px-3 sm:text-xs ${
                         timerAlarmMode === "ON"
                           ? "bg-amber-500 hover:bg-amber-600"

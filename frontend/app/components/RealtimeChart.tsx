@@ -14,7 +14,7 @@ interface RealtimeChartProps {
   showGrid?: boolean;
 }
 
-export default function RealtimeChart({
+function RealtimeChart({
   data,
   height = 220,
   showGrid = true,
@@ -254,3 +254,5 @@ export default function RealtimeChart({
     </div>
   );
 }
+
+export default React.memo(RealtimeChart);

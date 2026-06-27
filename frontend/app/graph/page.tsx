@@ -197,6 +197,7 @@ export default function GraphPage() {
           <YAxis
             width={35}
             tick={{ fontSize: 10 }}
+            domain={['auto', 'auto']}
           />
           <Tooltip />
           <Line
@@ -240,6 +241,7 @@ export default function GraphPage() {
           <YAxis
             width={35}
             tick={{ fontSize: 10 }}
+            domain={['auto', 'auto']}
           />
           <Tooltip />
           <Line

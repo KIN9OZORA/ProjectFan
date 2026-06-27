@@ -1,5 +1,5 @@
 import os
-import json
+import orjson
 import logging
 import re
 import time
@@ -102,7 +102,7 @@ def publish_command(device_id: str, payload: dict,
     Raises RuntimeError jika koneksi tidak tersedia setelah semua retry habis.
     """
     topic = f"device/{device_id}/command"
-    message = json.dumps(payload)
+    message = orjson.dumps(payload).decode()
 
     # Tunggu sampai MQTT connected, maksimal max_retries kali
     for attempt in range(1, max_retries + 1):
@@ -480,12 +480,36 @@ def save_status(data: dict):
         db.commit()
         logger.info(f"Status saved for {device_id}: {mqtt_status}")
 
+        # === BIRTH CERTIFICATE SYNC ===
+        # Saat device muncul online, kirim setpoint & mode terakhir dari DB
+        # agar ESP32 tidak pakai nilai default setelah restart
+        if raw_status == "online":
+            from models import DeviceSetting
+            setting = db.query(DeviceSetting).filter(DeviceSetting.device_id == device_id).first()
+            if setting:
+                try:
+                    sync_payload = {
+                        "setpoint_on":  setting.setpoint_on,
+                        "setpoint_off": setting.setpoint_off,
+                        "mode":         setting.mode,
+                    }
+                    publish_command(device_id, sync_payload)
+                    logger.info(
+                        f"[BIRTH SYNC] Sent settings to {device_id}: "
+                        f"setpoint_on={setting.setpoint_on}, "
+                        f"setpoint_off={setting.setpoint_off}, "
+                        f"mode={setting.mode}"
+                    )
+                except Exception as sync_err:
+                    logger.warning(f"[BIRTH SYNC] Failed to sync settings to {device_id}: {sync_err}")
+
     except Exception as e:
         db.rollback()
         logger.exception(f"Failed to save status: {e}")
 
     finally:
         db.close()
+
 
 
 def on_connect(client, userdata, flags, rc):
@@ -525,7 +549,7 @@ def on_message(client, userdata, msg):
         payload = msg.payload.decode()
         logger.info(f"MQTT message from authorized device {device_id} ({sub_topic}): {payload}")
         
-        data = json.loads(payload)
+        data = orjson.loads(payload)
 
         # 4. Paksa device_id di dalam data menggunakan device_id yang valid dari topik
         data["device_id"] = device_id
@@ -536,7 +560,7 @@ def on_message(client, userdata, msg):
         elif sub_topic == "status":
             db_executor.submit(save_status, data)
 
-    except json.JSONDecodeError:
+    except orjson.JSONDecodeError:
         logger.error(f"Failed to decode JSON payload from topic {msg.topic}")
     except Exception as e:
         logger.exception(f"Failed to process MQTT message: {e}")

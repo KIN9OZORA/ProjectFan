@@ -6,6 +6,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include "esp_system.h"
+#include <Preferences.h>
 
 // =======================
 // WIFI CONFIG
@@ -57,6 +58,7 @@ bool relayActiveLow = false;
 DFRobot_SHT3x sht31(&Wire, 0x44);
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
+Preferences preferences;
 
 // =======================
 // SENSOR VARIABLES
@@ -71,13 +73,16 @@ float lastHumidity = 0.0;
 // =======================
 bool   fanStatus   = false;
 bool   alarmStatus = false;
-String mode        = "AUTO";
 
 // =======================
-// AUTO SETPOINT
-// =======================
-float setpointOn  = 36.0;
-float setpointOff = 35.0;
+// State & Mode
+String mode = "AUTO"; // AUTO atau MANUAL
+float setpointOn = 30.0;
+float setpointOff = 28.0;
+
+bool pendingRestart = false;
+String pendingRestartReason = "";
+
 
 // =======================
 // MANUAL CONTROL
@@ -155,6 +160,8 @@ void startBuzzerTransition();
 void stopBuzzerTransition();
 void updateBuzzerTransition();
 void readSerialNonBlocking();
+void loadSettingsFromNVS();
+void saveSettingsToNVS();
 
 // =======================
 // BUZZER CONTROL
@@ -243,6 +250,30 @@ unsigned long getManualRemainingSeconds() {
 }
 
 // =======================
+// NVS STORAGE (PERSISTENCE)
+// =======================
+void loadSettingsFromNVS() {
+  preferences.begin("fan-settings", true);
+  setpointOn = preferences.getFloat("setpointOn", 36.0);
+  setpointOff = preferences.getFloat("setpointOff", 35.0);
+  String savedMode = preferences.getString("mode", "AUTO");
+  if (savedMode == "AUTO" || savedMode == "MANUAL") {
+    mode = savedMode;
+  }
+  preferences.end();
+  Serial.printf("[NVS] Loaded settings: Setpoint ON = %.1f C, Setpoint OFF = %.1f C, Mode = %s\n", setpointOn, setpointOff, mode.c_str());
+}
+
+void saveSettingsToNVS() {
+  preferences.begin("fan-settings", false);
+  preferences.putFloat("setpointOn", setpointOn);
+  preferences.putFloat("setpointOff", setpointOff);
+  preferences.putString("mode", mode);
+  preferences.end();
+  Serial.printf("[NVS] Saved settings: Setpoint ON = %.1f C, Setpoint OFF = %.1f C, Mode = %s\n", setpointOn, setpointOff, mode.c_str());
+}
+
+// =======================
 // SAFE RESTART
 // =======================
 void safeRestart(String reason) {
@@ -260,6 +291,10 @@ void safeRestart(String reason) {
   setFan(false);
   playBuzzer(3, 200);
   delay(1000);
+  
+  Serial.flush();
+  WiFi.disconnect(true);
+  delay(100);
   ESP.restart();
 }
 
@@ -425,7 +460,7 @@ void setupWiFi() {
 void checkWiFiHealth() {
   if (WiFi.status() == WL_CONNECTED) { wifiTroubleStartMillis = 0; return; }
   if (wifiTroubleStartMillis == 0) wifiTroubleStartMillis = millis();
-  WiFi.disconnect(); delay(100); WiFi.begin(ssid, password);
+  WiFi.reconnect();
   if (millis() - wifiTroubleStartMillis >= wifiTroubleRestartTime)
     safeRestart("WiFi putus > 2 menit");
 }
@@ -460,7 +495,7 @@ void processManualMode() {
       manualTimerActive = false; manualFanStartMillis = 0; manualAlarmConfigured = false;
       if (manualAlarmStatus) { manualFanStatus = true;  setFan(true);  Serial.println("[TIMER] ALARM ON -> Fan HIDUP"); }
       else                   { manualFanStatus = false; setFan(false); Serial.println("[TIMER] ALARM OFF -> Fan MATI"); }
-      playBuzzer(2, 150);
+      startBuzzerTransition();
     }
   }
 }
@@ -491,20 +526,24 @@ void publishTelemetry() {
       safeRestart("MQTT publish gagal 5x");
     return;
   }
-  StaticJsonDocument<256> doc;
+  StaticJsonDocument<512> doc;
   doc["device_id"]    = deviceId;
   doc["temperature"]  = temperature;
-  doc["humidity"]     = humidity;
-  doc["fan_status"]   = fanStatus;
-  doc["alarm_status"] = alarmStatus;
-  doc["mode"]         = mode;
-  doc["setpoint_on"]  = setpointOn;
-  doc["setpoint_off"] = setpointOff;
-  doc["fan_runtime"]  = fanRuntimeSeconds;
-  doc["uptime"]       = millis() / 1000;
-  doc["timer_remaining"] = manualTimerActive ? getManualRemainingSeconds() : 0;
+  doc["humidity"]               = humidity;
+  doc["fan_status"]             = fanStatus;
+  doc["alarm_status"]           = alarmStatus;
+  doc["mode"]                   = mode;
+  doc["setpoint_on"]            = setpointOn;
+  doc["setpoint_off"]           = setpointOff;
+  doc["fan_runtime"]            = fanRuntimeSeconds;
+  doc["uptime"]                 = millis() / 1000;
+  doc["manual_fan_status"]      = manualFanStatus;
+  doc["manual_alarm_status"]    = manualAlarmStatus;
+  doc["manual_timer_seconds"]   = (unsigned long)manualTimerSeconds;
+  doc["manual_timer_active"]    = manualTimerActive;
+  doc["timer_remaining_seconds"] = manualTimerActive ? getManualRemainingSeconds() : 0;
 
-  char buf[256]; size_t n = serializeJson(doc, buf);
+  char buf[384]; size_t n = serializeJson(doc, buf);
   if (mqttClient.publish(topicTelemetry.c_str(), buf, n)) {
     mqttPublishFailCount = 0;
     Serial.println("[MQTT] Telemetry published");
@@ -527,12 +566,33 @@ void handleMqttCommand(char* payload) {
   StaticJsonDocument<256> doc;
   if (deserializeJson(doc, payload)) { Serial.println("JSON error"); return; }
 
+  bool needNvsSave = false;
+
+  if (doc.containsKey("command")) {
+    String cmd = doc["command"].as<String>();
+    cmd.toUpperCase();
+    if (cmd == "RESTART_DEVICE") {
+      pendingRestart = true;
+      pendingRestartReason = "MQTT restart command";
+    } else if (cmd == "RESET_RUNTIME") {
+      fanRuntimeSeconds = 0;
+      fanLastUpdateMillis = millis();
+      cancelManualTimer();
+      Serial.println("Runtime & timer di-reset via MQTT");
+    } else if (cmd == "REQUEST_STATUS") {
+      publishTelemetry();
+    }
+  }
+
   if (doc.containsKey("mode")) {
     String m = doc["mode"].as<String>(); m.toUpperCase();
     if (m == "AUTO" || m == "MANUAL") {
-      mode = m; manualFanStatus = false; manualAlarmStatus = false;
-      cancelManualTimer(); setFan(false);
-      Serial.println("Mode -> " + mode);
+      if (mode != m) {
+        mode = m; manualFanStatus = false; manualAlarmStatus = false;
+        cancelManualTimer(); setFan(false);
+        Serial.println("Mode -> " + mode);
+        needNvsSave = true;
+      }
     }
   }
   if (doc.containsKey("fan") && mode == "MANUAL") {
@@ -540,22 +600,21 @@ void handleMqttCommand(char* payload) {
     manualFanStatus = f; setFan(f); cancelManualTimer();
   }
   if (doc.containsKey("setpoint_on")) {
-    float v = doc["setpoint_on"]; if (v > setpointOff) setpointOn = v;
+    float v = doc["setpoint_on"];
+    if (v > setpointOff) { setpointOn = v; needNvsSave = true; }
   }
   if (doc.containsKey("setpoint_off")) {
-    float v = doc["setpoint_off"]; if (v < setpointOn) setpointOff = v;
+    float v = doc["setpoint_off"];
+    if (v < setpointOn) { setpointOff = v; needNvsSave = true; }
   }
   if (doc.containsKey("timer")) {
     manualTimerSeconds = doc["timer"].as<unsigned long>();
   }
-
   if (doc.containsKey("alarm")) {
     manualAlarmStatus = doc["alarm"].as<bool>();
-
     Serial.print("Manual Alarm = ");
     Serial.println(manualAlarmStatus ? "ON" : "OFF");
-}
-
+  }
   if (doc.containsKey("start_timer") && doc["start_timer"].as<bool>()
       && mode == "MANUAL" && manualTimerSeconds > 0) {
     manualTimerActive = true; manualAlarmConfigured = true;
@@ -563,6 +622,9 @@ void handleMqttCommand(char* payload) {
     if (manualAlarmStatus) { manualFanStatus = false; setFan(false); }
     else                   { manualFanStatus = true;  setFan(true);  }
   }
+
+  if (needNvsSave) saveSettingsToNVS();
+
   processSystemLogic();
   publishTelemetry();
 }
@@ -663,22 +725,26 @@ void handleSerialCommand(String cmd) {
   cmd.trim(); cmd.toLowerCase();
   if (cmd.length() == 0) return;
 
+  bool needNvsSave = false;
+
   if (cmd == "auto") {
     mode = "AUTO"; manualFanStatus = false; manualAlarmStatus = false;
     cancelManualTimer(); setFan(false); Serial.println("Mode -> AUTO");
+    needNvsSave = true;
   }
   else if (cmd == "manual") {
     mode = "MANUAL"; manualFanStatus = false; manualAlarmStatus = false;
     cancelManualTimer(); setFan(false); alarmStatus = false; Serial.println("Mode -> MANUAL");
+    needNvsSave = true;
   }
   else if (cmd.startsWith("set on ")) {
     float v = cmd.substring(7).toFloat();
-    if (v > setpointOff) { setpointOn = v; Serial.printf("Setpoint ON = %.1f C\n", setpointOn); }
+    if (v > setpointOff) { setpointOn = v; Serial.printf("Setpoint ON = %.1f C\n", setpointOn); needNvsSave = true; }
     else Serial.println("Invalid: ON harus > OFF");
   }
   else if (cmd.startsWith("set off ")) {
     float v = cmd.substring(8).toFloat();
-    if (v < setpointOn) { setpointOff = v; Serial.printf("Setpoint OFF = %.1f C\n", setpointOff); }
+    if (v < setpointOn) { setpointOff = v; Serial.printf("Setpoint OFF = %.1f C\n", setpointOff); needNvsSave = true; }
     else Serial.println("Invalid: OFF harus < ON");
   }
   else if (cmd == "fan on") {
@@ -721,6 +787,8 @@ void handleSerialCommand(String cmd) {
   else if (cmd == "help")     printHelp();
   else { Serial.println("Command tidak dikenal. Ketik 'help'"); return; }
 
+  if (needNvsSave) saveSettingsToNVS();
+
   processSystemLogic();
   publishTelemetry();
 }
@@ -730,6 +798,7 @@ void handleSerialCommand(String cmd) {
 // =======================
 void setup() {
   Serial.begin(115200);
+  loadSettingsFromNVS();
 
   pinMode(FAN_PIN,    OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
@@ -742,6 +811,7 @@ void setup() {
   delay(500);
 
   Wire.begin(SDA_PIN, SCL_PIN);
+  Wire.setClock(400000);
 
   // Init OLED
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
@@ -798,6 +868,11 @@ void loop() {
 
   if (enableDailyRestart && now >= dailyRestartInterval)
     safeRestart("Daily restart 24 jam");
+
+  if (pendingRestart) {
+    pendingRestart = false;
+    safeRestart(pendingRestartReason);
+  }
 
   // Baca command dari Serial Monitor secara non-blocking
   readSerialNonBlocking();

@@ -13,7 +13,7 @@ interface GaugeCardProps {
   type?: "temperature" | "humidity" | "default";
 }
 
-export default function GaugeCard({
+function GaugeCard({
   title,
   value,
   min,
@@ -211,3 +211,5 @@ export default function GaugeCard({
     </div>
   );
 }
+
+export default React.memo(GaugeCard);
