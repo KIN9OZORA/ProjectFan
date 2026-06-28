@@ -719,6 +719,18 @@ void reconnectMQTTOnce() {
 unsigned long lastMqttReconnectAttempt = 0;
 void checkMqttHealth() {
   if (!mqttClient.connected()) {
+    if (mqttTroubleStartMillis == 0) mqttTroubleStartMillis = millis();
+
+    // GHOST WIFI RECOVERY: Jika MQTT mati selama > 5 menit, kemungkinan MiFi nge-hang (Ghost WiFi)
+    // Solusi: Kita putus paksa WiFi-nya dari dalam ESP32, lalu suruh nyambung lagi.
+    if (millis() - mqttTroubleStartMillis >= 5UL * 60UL * 1000UL) {
+      Serial.println("[GHOST WIFI RECOVERY] MQTT gagal > 5 menit! Memutus paksa koneksi WiFi MiFi...");
+      WiFi.disconnect();
+      delay(200);
+      WiFi.reconnect();
+      mqttTroubleStartMillis = millis(); // Reset timer agar tidak terus-terusan putus
+    }
+
     // Hanya mencoba reconnect tiap 10 detik agar tidak memblokir loop terlalu sering
     if (millis() - lastMqttReconnectAttempt > 10000) {
       lastMqttReconnectAttempt = millis();
@@ -730,10 +742,6 @@ void checkMqttHealth() {
         mqttTroubleStartMillis = 0;
         Serial.println("MQTT reconnected");
         publishStatus("online");
-      } else {
-        if (mqttTroubleStartMillis == 0) mqttTroubleStartMillis = millis();
-        // Hapus fungsi safeRestart jika MQTT putus, biarkan saja mencoba terus
-        // agar kipas tetap bisa berputar otomatis walau internet mati total
       }
     }
   } else { 
