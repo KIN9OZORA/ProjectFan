@@ -702,33 +702,43 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 void reconnectMQTTOnce() {
-  int retry = 0;
-  while (!mqttClient.connected()) {
-    String id = deviceId + "-" + String(random(0xffff), HEX);
-    if (mqttClient.connect(id.c_str())) {
-      mqttClient.subscribe(topicCommand.c_str());
-      publishStatus("online");
-      Serial.println("MQTT connected");
-    } else {
-      Serial.printf("MQTT failed rc=%d, retry in 5s\n", mqttClient.state());
-      delay(5000);
-      if (++retry > 10) safeRestart("MQTT gagal connect saat setup");
-    }
+  Serial.println("Mencoba koneksi MQTT awal...");
+  espClient.setTimeout(3); // Timeout 3 detik agar tidak ngehang lama
+  String id = deviceId + "-" + String(random(0xffff), HEX);
+  if (mqttClient.connect(id.c_str())) {
+    mqttClient.subscribe(topicCommand.c_str());
+    publishStatus("online");
+    Serial.println("MQTT connected");
+  } else {
+    Serial.printf("MQTT failed rc=%d\n", mqttClient.state());
+    // Tidak di-loop dan tidak direstart, biarkan masuk ke loop() 
+    // agar sensor dan OLED tetap berjalan meski internet mati!
   }
 }
 
+unsigned long lastMqttReconnectAttempt = 0;
 void checkMqttHealth() {
   if (!mqttClient.connected()) {
-    if (mqttTroubleStartMillis == 0) mqttTroubleStartMillis = millis();
-    if (millis() - mqttTroubleStartMillis >= mqttTroubleRestartTime)
-      safeRestart("MQTT putus > 3 menit");
-    String id = deviceId + "-" + String(random(0xffff), HEX);
-    if (mqttClient.connect(id.c_str())) {
-      mqttClient.subscribe(topicCommand.c_str());
-      mqttTroubleStartMillis = 0;
-      Serial.println("MQTT reconnected");
+    // Hanya mencoba reconnect tiap 10 detik agar tidak memblokir loop terlalu sering
+    if (millis() - lastMqttReconnectAttempt > 10000) {
+      lastMqttReconnectAttempt = millis();
+      Serial.println("Mencoba reconnect MQTT...");
+      espClient.setTimeout(3);
+      String id = deviceId + "-" + String(random(0xffff), HEX);
+      if (mqttClient.connect(id.c_str())) {
+        mqttClient.subscribe(topicCommand.c_str());
+        mqttTroubleStartMillis = 0;
+        Serial.println("MQTT reconnected");
+        publishStatus("online");
+      } else {
+        if (mqttTroubleStartMillis == 0) mqttTroubleStartMillis = millis();
+        // Hapus fungsi safeRestart jika MQTT putus, biarkan saja mencoba terus
+        // agar kipas tetap bisa berputar otomatis walau internet mati total
+      }
     }
-  } else { mqttTroubleStartMillis = 0; }
+  } else { 
+    mqttTroubleStartMillis = 0; 
+  }
 }
 
 // =======================
