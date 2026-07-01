@@ -548,7 +548,7 @@ export default function RealtimePage() {
                       onChange={(e) =>
                         setSetpointOnInput(Number(e.target.value))
                       }
-                      className={`w-full rounded-lg border px-2 py-1.5 text-[10px] outline-none focus:border-blue-500 sm:text-xs ${
+                      className={`w-full bg-white text-slate-900 rounded-lg border px-2 py-1.5 text-[10px] outline-none focus:border-blue-500 sm:text-xs ${
                         setpointOnInput > setpointOffInput
                           ? "border-emerald-300"
                           : "border-red-300"
@@ -566,7 +566,7 @@ export default function RealtimePage() {
                       onChange={(e) =>
                         setSetpointOffInput(Number(e.target.value))
                       }
-                      className={`w-full rounded-lg border px-2 py-1.5 text-[10px] outline-none focus:border-blue-500 sm:text-xs ${
+                      className={`w-full bg-white text-slate-900 rounded-lg border px-2 py-1.5 text-[10px] outline-none focus:border-blue-500 sm:text-xs ${
                         setpointOnInput > setpointOffInput
                           ? "border-emerald-300"
                           : "border-red-300"
@@ -774,7 +774,7 @@ export default function RealtimePage() {
                       onChange={(e) =>
                         setTimerSecondsInput(Number(e.target.value))
                       }
-                      className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-[10px] outline-none focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400 sm:text-xs"
+                      className="w-full bg-white text-slate-900 rounded-lg border border-slate-300 px-2 py-1.5 text-[10px] outline-none focus:border-blue-500 disabled:bg-slate-100 disabled:text-slate-400 sm:text-xs"
                     />
                   </label>
 
