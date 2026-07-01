@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useId } from "react";
 
 interface ChartDataPoint {
   time: string;
@@ -19,8 +19,9 @@ function RealtimeChart({
   height = 220,
   showGrid = true,
 }: RealtimeChartProps) {
-  const PADDING_LEFT = 38;
-  const PADDING_RIGHT = 12;
+  const gradientId = useId();
+  const PADDING_LEFT = 50; // Ditingkatkan agar angka tidak terpotong di mobile
+  const PADDING_RIGHT = 16;
   const PADDING_TOP = 20;
   const PADDING_BOTTOM = 30;
 
@@ -131,7 +132,7 @@ function RealtimeChart({
       >
         <defs>
           <linearGradient
-            id="temperatureGradient"
+            id={gradientId}
             x1="0%"
             y1="0%"
             x2="0%"
@@ -184,7 +185,7 @@ function RealtimeChart({
           ))}
 
         {/* Area */}
-        <path d={areaPath} fill="url(#temperatureGradient)" />
+        <path d={areaPath} fill={`url(#${gradientId})`} />
 
         {/* Line */}
         <path
